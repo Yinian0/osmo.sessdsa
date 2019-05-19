@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 
+#####################################################
+#                                                   #
+#     ______        _______..___  ___.   ______     #
+#    /  __  \      /       ||   \/   |  /  __  \    #
+#   |  |  |  |    |   (----`|  \  /  | |  |  |  |   #
+#   |  |  |  |     \   \    |  |\/|  | |  |  |  |   #
+#   |  `--'  | .----)   |   |  |  |  | |  `--'  |   #
+#    \______/  |_______/    |__|  |__|  \______/    #
+#                                                   #
+#                                                   #
+#####################################################
+
 # This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
@@ -12,76 +24,147 @@
 
 import random
 import math
+import traceback
+import logging
+
+from copy import deepcopy
+from time import perf_counter as pf
 
 from consts import Consts
 from cell import Cell
 
 class World():
-    def __init__(self, player0, player1):
+    def __init__(self, player0, player1, names = None):
         # Variables and setup
-        self.cells = [] # Array of cells
         self.cells_count = 0
-        self.frame_count = 0
-        self.result = None
         # Init
         self.new_game()
         self.player0 = player0
         self.player1 = player1
+        self.names = names
 
     # Methods
     def new_game(self):
-        self.cells = []
+        """Create a new game.
+
+        Args:
+            
+        Returns:
+            
+
+        """
+        self.cells = [] # Array of cells
         self.frame_count = 0
+        self.database = []
+        self.timer = [Consts["MAX_TIME"], Consts["MAX_TIME"]]
+        self.result = None
         # Define the players first
-        self.cells.append(Cell([Consts["WORLD_X"] / 4, Consts["WORLD_Y"] / 2], [0, 0], 30, isplayer = True))
-        self.cells.append(Cell([Consts["WORLD_X"] / 4 * 3, Consts["WORLD_Y"] / 2], [0, 0], 30, isplayer = True))
+        self.cells.append(Cell(0, [Consts["WORLD_X"] / 4, Consts["WORLD_Y"] / 2], [0, 0], Consts["DEFAULT_RADIUS"]))
+        self.cells.append(Cell(1, [Consts["WORLD_X"] / 4 * 3, Consts["WORLD_Y"] / 2], [0, 0], Consts["DEFAULT_RADIUS"]))
         # Generate a bunch of random cells
         for i in range(Consts["CELLS_COUNT"]):
             if i < 4:
-                rad = 3 + (random.random() * 3) # Small cells
+                rad = 1.5 + (random.random() * 1.5) # Small cells
             elif i < 10:
-                rad = 20 + (random.random() * 8) # Big cells
+                rad = 10 + (random.random() * 4) # Big cells
             else:
-                rad = 4 + (random.random() * 18) # Everything else
-            ang = random.random() * 2 * math.pi
+                rad = 2 + (random.random() * 9) # Everything else
             x = Consts["WORLD_X"] * random.random()
             y = Consts["WORLD_Y"] * random.random()
-            cell = Cell([x, y], [(random.random() - 0.5) * 2, (random.random() - 0.5) * 2], rad)
+            cell = Cell(i + 2, [x, y], [(random.random() - 0.5) * 2, (random.random() - 0.5) * 2], rad)
+            safe_dist = Consts["SAFE_DIST"] + rad
+            while min(map(cell.distance_from, self.cells[:2])) < safe_dist:
+                cell.pos = [
+                    Consts["WORLD_X"] * random.random(),
+                    Consts["WORLD_Y"] * random.random()
+                ]
             self.cells.append(cell)
 
-    def save_game(self):
-        pass
+    def check_point(self, flag0, flag1, cause):
+        """Checkpoint to determine if the game is over.
 
-    def game_over(self, loser):
+        Args:
+            flag0: mark the status of player0.
+            flag1: mark the status of player1.
+            cause: reason for the end of the game.
+        Returns:
+            whether it's endgame.
+
+        """
+        if not flag0 and flag1:
+            self.game_over(0, cause, (flag0, flag1))
+        elif flag0 and not flag1:
+            self.game_over(1, cause, (flag0, flag1))
+        elif flag0 and flag1:
+            self.game_over(-1, cause, (flag0, flag1))
+        return bool(flag0 or flag1)
+
+    def game_over(self, winner, cause, detail = None):
+        """Game over.
+
+        Args:
+            winner: id of the winner.
+            cause: reason for the end of the game.
+        Returns:
+            
+
+        """
         self.result = {
-            "winner": 1 - loser
+            "players": self.names,
+            "winner": winner,
+            "cause": cause,
+            "detail": detail,
+            "data": self.database,
+            "saved": False
         }
-        print("Winner, Winner, Chiken Dinner")
-        print("Player {} dead".format(loser))
+        print("Winner Winner Chicken Dinner!")
+        if winner != -1:
+            print("Winner: Player {}.".format(winner))
+        else:
+            print("Game ends in a draw.")
+        print(cause)
 
     def eject(self, player, theta):
-        if player.dead or not theta:
+        """Create a new cell after the ejection process.
+
+        Args:
+            player: the player.
+            theta: angle.
+        Returns:
+            
+
+        """
+        if player.dead or theta == None:
             return
         # Reduce force in proportion to area
         fx = math.sin(theta)
         fy = math.cos(theta)
-        # Push player
         new_veloc_x = player.veloc[0] + Consts["DELTA_VELOC"] * fx * (1 - Consts["EJECT_MASS_RATIO"])
         new_veloc_y = player.veloc[1] + Consts["DELTA_VELOC"] * fy * (1 - Consts["EJECT_MASS_RATIO"])
+        # Push player
         player.veloc[0] -= Consts["DELTA_VELOC"] * fx * Consts["EJECT_MASS_RATIO"]
         player.veloc[1] -= Consts["DELTA_VELOC"] * fy * Consts["EJECT_MASS_RATIO"]
         # Shoot off the expended mass in opposite direction
         newrad = player.radius * Consts["EJECT_MASS_RATIO"] ** 0.5
         # Lose some mass (shall we say, Consts["EJECT_MASS_RATIO"]?)
         player.radius *= (1 - Consts["EJECT_MASS_RATIO"]) ** 0.5
+        # Create new cell
         new_pos_x = player.pos[0] + fx * (player.radius + newrad)
         new_pos_y = player.pos[1] + fy * (player.radius + newrad)
-        new_cell = Cell([new_pos_x, new_pos_y], [new_veloc_x, new_veloc_y], newrad)
+        new_cell = Cell(len(self.cells), [new_pos_x, new_pos_y], [new_veloc_x, new_veloc_y], newrad)
         new_cell.stay_in_bounds()
         new_cell.limit_speed()
         self.cells.append(new_cell)
 
     def absorb(self, collision):
+        """Performing the absorption process.
+
+        Args:
+            collision: all the cells that collided.
+        Returns:
+            
+
+        """
         # Calculate total momentum and mass
         mass = sum(self.cells[ele].area() for ele in collision)
         px = sum(self.cells[ele].area() * self.cells[ele].veloc[0] for ele in collision)
@@ -94,15 +177,23 @@ class World():
         self.cells[biggest].veloc[1] = py / mass
         for ele in collision:
             self.cells[ele].dead = True
-            # If we just killed the player, Game over
-            if self.cells[ele].isplayer:
-                self.game_over(ele)
 
     def update(self, frame_delta):
+        """Create new frames.
+
+        Args:
+            frame_delta: Time interval between two frames.
+        Returns:
+            
+
+        """
         # Save
-        self.save_game()
+        self.database.append(deepcopy(self.cells))
         # New frame
         self.frame_count += 1
+        if self.frame_count == Consts["MAX_FRAME"]: # Time's up
+            self.check_point(self.cells[0].radius <= self.cells[1].radius, self.cells[0].radius >= self.cells[1].radius, "MAX_FRAME")
+            return
         for cell in self.cells:
             if not cell.dead:
                 cell.move(frame_delta)
@@ -131,24 +222,44 @@ class World():
         for collision in collisions:
             if collision != []:
                 self.absorb(collision)
+        # If we just killed the player, Game over
+        if self.check_point(self.cells[0].dead, self.cells[1].dead, "PLAYER_DEAD"):
+            return
         # Eject!
-        allcells = [cell for cell in self.cells if cell.dead == False]
+        allcells = [cell for cell in self.cells if not cell.dead]
         self.cells_count = len(allcells)
 
-        try:
-            theta0 = self.player0.strategy(allcells.copy())
-        except:
-            self.game_over(0)
-        try:
-            theta1 = self.player1.strategy(allcells.copy())
-        except:
-            self.game_over(1)
+        theta0 = theta1 = None
+        flag0 = flag1 = False
+
+        if self.timer[0] > 0:
+            try:
+                ti = pf()
+                theta0 = self.player0.strategy(deepcopy(allcells))
+                tf = pf()
+                self.timer[0] -= tf - ti
+            except Exception as e:
+                logging.error(traceback.format_exc())
+                flag0 = e
+        if self.timer[1] > 0:
+            try:
+                ti = pf()
+                theta1 = self.player1.strategy(deepcopy(allcells))
+                tf = pf()
+                self.timer[1] -= tf - ti
+            except Exception as e:
+                logging.error(traceback.format_exc())
+                flag1 = e
 
         if isinstance(theta0, (int, float, type(None))):
-            self.eject(self.cells[0], theta0)
+            if self.timer[0] >= 0:
+                self.eject(self.cells[0], theta0)
         else:
-            self.game_over(0)
+            flag0 = True
         if isinstance(theta1, (int, float, type(None))):
-            self.eject(self.cells[1], theta1)
+            if self.timer[1] >= 0:
+                self.eject(self.cells[1], theta1)
         else:
-            self.game_over(1)
+            flag1 = True
+
+        self.check_point(flag0, flag1, "RUNTIME_ERROR")

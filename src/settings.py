@@ -22,31 +22,10 @@
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
 
-import time
-
-from consts import Consts
-from settings import Settings
-from world import World
-
-from sample.brownian_motion import Player as Player0
-from sample.cxk import Player as Player1
-
-from database import Database
-
-if __name__ == "__main__":
-    world = World(Player0(0), Player1(1))
-    # For timer
-    frame_delta = None
-    last_tick = int(round(time.time() * 1000))
-
-    while not world.result:
-        # Advance timer
-        current_tick = int(round(time.time() * 1000))
-        frame_delta = (current_tick - last_tick) * Consts["FPS"] / 1000
-        last_tick = current_tick
-        world.update(Consts["FRAME_DELTA"])
-    else:
-        if Settings["ENABLE_DATABASE"] and not world.result["saved"]:
-            database = Database()
-            database.save_game(world.result["data"])
-            world.result["saved"] = True
+# Settings
+Settings = {
+    # pygame required
+    "ENABLE_JNTM": False,
+    # sqlite3 required
+    "ENABLE_DATABASE": False
+}

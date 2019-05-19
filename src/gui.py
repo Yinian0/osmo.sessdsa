@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 
+#####################################################
+#                                                   #
+#     ______        _______..___  ___.   ______     #
+#    /  __  \      /       ||   \/   |  /  __  \    #
+#   |  |  |  |    |   (----`|  \  /  | |  |  |  |   #
+#   |  |  |  |     \   \    |  |\/|  | |  |  |  |   #
+#   |  `--'  | .----)   |   |  |  |  | |  `--'  |   #
+#    \______/  |_______/    |__|  |__|  \______/    #
+#                                                   #
+#                                                   #
+#####################################################
+
 # This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
@@ -16,10 +28,13 @@ import math
 import time
 
 from consts import Consts
+from settings import Settings
 from world import World
 
 from sample.brownian_motion import Player as Player0
 from sample.cxk import Player as Player1
+
+from database import Database
 
 class Application(tk.Frame):
     def __init__(self, master = None):
@@ -40,13 +55,37 @@ class Application(tk.Frame):
         self.master.after(int(1000 / Consts["FPS"]), self.refresh_screen)
 
     def play(self):
+        """Control the pause and start of the game.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         self.paused = not self.paused
         self.widget["play"]["text"] = "PLAY" if self.paused else "PAUSE"
 
     def reset(self):
+        """Reset the world.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         self.world.new_game()
 
     def create_widgets(self):
+        """Create widgets.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         self.widget = {}
         self.widget["play"] = tk.Button(self, text = "PAUSE", command = self.play)
         self.widget["play"].pack(side = "left")
@@ -60,28 +99,74 @@ class Application(tk.Frame):
         self.widget["frame_count"].pack(side = "left")
 
     def create_canvas(self):
+        """Create canvas.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         self.canvas = tk.Canvas(self.master, bg = "blue", width = Consts["WORLD_X"], height = Consts["WORLD_Y"])
         self.canvas.pack()
 
     def create_event_listener(self):
+        """Create event listeners.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         self.canvas.bind("<Button-1>", self.on_click)
         if system() != "Darwin":
             self.canvas.bind("<MouseWheel>", self.on_mousewheel)
 
     def on_click(self, event):
+        """Handle click events.
+
+        Args:
+            event: click event.
+        Returns:
+            
+
+        """
         cell = self.world.cells[0]
         theta = math.atan2(event.x - cell.pos[0], event.y - cell.pos[1])
         self.world.eject(cell, theta)
 
     def on_mousewheel(self, event):
+        """Handle mouse scroll events.
+
+        Args:
+            event: mouse scroll event.
+        Returns:
+            
+
+        """
         print(event.delta)
 
     def refresh_screen(self):
+        """Refresh screen.
+
+        Args:
+            
+        Returns:
+            
+
+        """
         # Advance timer
         current_tick = int(round(time.time() * 1000))
         self.frame_delta = (current_tick - self.last_tick) * Consts["FPS"] / 1000
         self.last_tick = current_tick
         self.master.after(int(1000 / Consts["FPS"]), self.refresh_screen)
+        if self.world.result:
+            if Settings["ENABLE_DATABASE"] and not self.world.result["saved"]:
+                database = Database()
+                database.save_game(self.world.result["data"])
+                self.world.result["saved"] = True
+            return
         if self.paused:
             return
         # Update Label
@@ -94,7 +179,7 @@ class Application(tk.Frame):
         for cell in self.world.cells:
             if cell.dead:
                 continue
-            color = "green" if cell.isplayer else "cyan"
+            color = "green" if cell.id <= 1 else "cyan"
             coords = [
                 cell.pos[0] - cell.radius,
                 cell.pos[1] - cell.radius,

@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
 
+#####################################################
+#                                                   #
+#     ______        _______..___  ___.   ______     #
+#    /  __  \      /       ||   \/   |  /  __  \    #
+#   |  |  |  |    |   (----`|  \  /  | |  |  |  |   #
+#   |  |  |  |     \   \    |  |\/|  | |  |  |  |   #
+#   |  `--'  | .----)   |   |  |  |  | |  `--'  |   #
+#    \______/  |_______/    |__|  |__|  \______/    #
+#                                                   #
+#                                                   #
+#####################################################
+
 # This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
@@ -11,25 +23,30 @@
 #  GNU General Public License for more details.
 
 from consts import Consts
+from settings import Settings
 import random
 import math
 
-from pygame import mixer 
-
-mixer.init()
-mixer.music.load("sample/jntm.mp3")
+import os
 
 class Player():
     def __init__(self, id, arg = None):
         self.id = id
+        print("MUSIC!!!")
+        if Settings["ENABLE_JNTM"]:
+            from pygame import mixer
+            self.mixer = mixer
+            self.mixer.init()
+            self.mixer.music.load(os.path.join(os.getcwd(), "sample/jntm.mp3"))
+        else:
+            self.mixer = None
 
     def sing(self):
-        print("MUSIC!!!")
-        if random.random() < 0.1:
-            mixer.music.play()
+        if self.mixer and random.random() < 0.1:
+            self.mixer.music.play()
         return None
 
-    def jump(self, allcells):
+    def dance(self, allcells):
         # Only move to the smallest cell
         min_cell = sorted(allcells, key = lambda cell: cell.radius)[0]
         dx = allcells[self.id].pos[0] - min_cell.pos[0]
@@ -53,7 +70,7 @@ class Player():
         if rng == 0:
             return self.sing()
         elif rng == 1:
-            return self.jump(allcells)
+            return self.dance(allcells)
         elif rng == 2:
             return self.rap(allcells)
         else:
