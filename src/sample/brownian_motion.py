@@ -33,4 +33,8 @@ class Player():
     def strategy(self, allcells):
         # Random angle
         theta = 2 * math.pi * random.random()
-        return theta if random.random() > 0.8 else None
+        if random.random() > 0.95:
+
+            return None
+        else:
+            return None
