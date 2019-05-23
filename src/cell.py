@@ -134,3 +134,16 @@ class Cell():
         self.pos[1] += self.veloc[1] * frame_delta
         self.stay_in_bounds()
         self.limit_speed()
+
+    def copy(self):
+        """Returns a copy of current cell.
+
+        Args:
+            
+        Returns:
+            the copy
+
+        """
+        res = Cell(self.id, self.pos[:], self.veloc[:], self.radius)
+        res.dead = self.dead
+        return res

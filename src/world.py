@@ -27,16 +27,17 @@ import math
 import traceback
 import logging
 
-from copy import deepcopy
 from time import perf_counter as pf
 
 from consts import Consts
 from cell import Cell
 
 class World():
-    def __init__(self, player0, player1, names = None):
+    def __init__(self, player0, player1, names = None, recorders = None):
         # Variables and setup
         self.cells_count = 0
+        # Bind stat recorders
+        self.recorders = recorders
         # Init
         self.new_game()
         self.player0 = player0
@@ -79,6 +80,8 @@ class World():
                     Consts["WORLD_Y"] * random.random()
                 ]
             self.cells.append(cell)
+        # Update recorders
+        self.update_recorders()
 
     def check_point(self, flag0, flag1, cause):
         """Checkpoint to determine if the game is over.
@@ -188,12 +191,15 @@ class World():
 
         """
         # Save
-        self.database.append(deepcopy(self.cells))
+        self.database.append([c.copy() for c in self.cells])
         # New frame
         self.frame_count += 1
         if self.frame_count == Consts["MAX_FRAME"]: # Time's up
             self.check_point(self.cells[0].radius <= self.cells[1].radius, self.cells[0].radius >= self.cells[1].radius, "MAX_FRAME")
             return
+        # Update recorders
+        self.update_recorders()
+
         for cell in self.cells:
             if not cell.dead:
                 cell.move(frame_delta)
@@ -235,7 +241,7 @@ class World():
         if self.timer[0] > 0:
             try:
                 ti = pf()
-                theta0 = self.player0.strategy(deepcopy(allcells))
+                theta0 = self.player0.strategy([c.copy() for c in allcells])
                 tf = pf()
                 self.timer[0] -= tf - ti
             except Exception as e:
@@ -244,7 +250,7 @@ class World():
         if self.timer[1] > 0:
             try:
                 ti = pf()
-                theta1 = self.player1.strategy(deepcopy(allcells))
+                theta1 = self.player1.strategy([c.copy() for c in allcells])
                 tf = pf()
                 self.timer[1] -= tf - ti
             except Exception as e:
@@ -263,3 +269,23 @@ class World():
             flag1 = True
 
         self.check_point(flag0, flag1, "RUNTIME_ERROR")
+
+    def update_recorders(self):
+        """Put values into recorders.
+
+        Args:
+        
+        Returns:
+    
+        """
+        if not self.recorders:
+            return
+        for i, rec in enumerate(self.recorders):
+            rec.frame = self.frame_count # Current frame
+            rec.cells_count = len(self.cells)
+
+
+class WorldStat:
+    def __init__(self, frames):
+        self.total_frames = frames
+        self.frame = 0
