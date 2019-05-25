@@ -130,9 +130,8 @@ class Cell():
 # -------------------------------------------
 class Player():
     search_radius = 200  # (搜索半径）
-    danger_radius = 100  # 危险判定半径
-    vmax = 1  # 最高的速度，再快就不追了，自动捕获即可
-
+    danger_radius = 70  # 危险判定半径
+    vmax = 0.5  # 最高的速度，再快就不追了，自动捕获即可
 
     def __init__(self, id, arg=None):
         self.id = id
@@ -259,18 +258,26 @@ class Player():
                 continue
             min_dis = self.min_distance(a, i)
             dv = self.delta_v(a, i)
-            if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...）
+
+            # 计算喷射角度，都是垂直速度方向并且远离圆心
+            dx = -a.pos[0] + i.pos[0]
+            dy = -a.pos[1] + i.pos[1]
+            theta_x = math.atan2(dx, dy) + int(math.atan2(dx, dy) < 0) * 2 * math.pi
+            dvx = -a.veloc[0] + i.veloc[0]
+            dvy = -a.veloc[1] + i.veloc[1]
+            theta_v = math.atan2(dvx, dvy) + int(math.atan2(dvx, dvy) < 0) * 2 * math.pi
+            if theta_x - theta_v - 0.5 * math.pi + int(
+                    theta_x - theta_v - 0.5 * math.pi < 0) * 2 * math.pi <= 0.5 * math.pi:
+                theta = theta_v + math.pi * 0.5
+            else:
+                theta = theta_v - math.pi * 0.5
+
+            if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...)
                 time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
-                dx = -a.pos[0] + i.pos[0]
-                dy = -a.pos[1] + i.pos[1]
-                theta = math.atan2(dx, dy)  # 极轴是y轴,喷射球,指向最近距离方向
                 dangers.append((time, theta))  # 返回碰撞时间和逃离角度
-            if min_dis <= R + 5:  # 避免过于接近
+            if min_dis <= R + 10:  # 避免过于接近
                 print('close!')
                 time = min_dis / dv
-                dvx = -a.veloc[0] + i.veloc[0]
-                dvy = -a.veloc[1] + i.veloc[1]
-                theta = -math.atan2(dvy, dvx) + 2 * math.pi
                 dangers.append((time, theta))
 
         if not dangers:

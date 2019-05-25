@@ -31,8 +31,8 @@ from consts import Consts
 from settings import Settings
 from world import World
 
-from sample.yinian import Player as Player0
-from sample.only_escape import Player as Player1
+from sample.eat import Player as Player0
+from sample.eat import Player as Player1
 
 from database import Database
 

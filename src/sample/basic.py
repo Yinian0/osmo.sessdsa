@@ -176,7 +176,7 @@ class Player():
         dy = -a.pos[1] + b.pos[1]
         return (dx ** 2 + dy ** 2) ** 0.5
 
-    # 匀速运动的a，b之间的最小距离
+    # 匀速运动的a，b之间的最小距离(a到b所在直线的最小距离）
     def min_distance(self, a, b):
         dx = -a.pos[0] + b.pos[0]
         dy = -a.pos[1] + b.pos[1]

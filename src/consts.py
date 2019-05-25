@@ -36,7 +36,7 @@ Consts = {
     # EJECT_MASS_RATIO
     "EJECT_MASS_RATIO": 0.01,
     # FPS
-    "FPS": 20,
+    "FPS": 40,
     # FRAME_DELTA
     "FRAME_DELTA": 3,
     # DELTA_VELOC

@@ -11,6 +11,7 @@
 #  GNU General Public License for more details.
 
 import math
+import random
 from consts import Consts
 
 
@@ -128,9 +129,12 @@ class Cell():
 
 # -------------------------------------------
 class Player():
-    search_radius = 500  # (搜索半径）
-    danger_radius = 50  # 危险判定半径
-    vmax = 1  # 最高的速度，再快就不追了，自动捕获即可
+    search_radius = 70  # (搜索半径）
+    danger_radius = 70  # 危险判定半径
+
+    tick = 0
+    eject_time = 0
+    eject_direction = None
 
     def __init__(self, id, arg=None):
         self.id = id
@@ -149,6 +153,20 @@ class Player():
                 temp.pos[1] = y + j * Consts["WORLD_Y"]
                 mirror.append(temp)
         return mirror
+
+    # 搜索半径随着数目减小要增大,(随速度增大也要增大?)
+    def danger_r(self, a, n):
+        v = (a.veloc[1] ** 2 + a.veloc[0] ** 2) ** 0.5
+        if v <= 0.5:
+            return 70
+        else:
+            return 70 * (2 * v) ** 2
+
+    def search_r(self, a, n):
+        if n > 12:
+            return 150
+        else:
+            return 400 / math.ceil(n / 5)
 
     # b相对a的径向速度（仅考虑未扩展的地图）
     def delta_vr(self, a, b):
@@ -191,13 +209,119 @@ class Player():
     def min_time(self, a, b):
         return self.min_distance(a, b) / self.delta_v(a, b)
 
+    def abs_angle(self, t1, t2):
+        dt = t1 - t2
+        dt = dt - dt // (2 * math.pi) * 2 * math.pi
+        return dt
+
     def sumR(self, a, b):
         return a.radius + b.radius
 
+    # 用mathematica解方程化简得到表达式，a追b的帧数
+    def attack_frame(self, a, b, theta, eject_time):
+        # 认为是对着一个固定方向连续喷射几个球，然后发生碰撞
+        # 这里的theta是运动方向，和喷射方向相反，坐标是与x负方向夹角（为什么要取这个SB坐标！！！！）
+        R = self.sumR(a, b) * 0.9  # 增大保障！
+        x0 = a.pos[0] - b.pos[0]
+        y0 = a.pos[1] - b.pos[1]
+        vx = -a.veloc[0] + b.veloc[0]
+        vy = -a.veloc[1] + b.veloc[1]
+        fd = Consts["FRAME_DELTA"]
+        dv = Consts["DELTA_VELOC"] * Consts['EJECT_MASS_RATIO']
+        n = eject_time
+
+        # 计算判别式
+        delta = fd ** 2 * ((-(
+                dv ** 2 * n ** 2) - vx ** 2 - vy ** 2 - 2 * dv * n * vx * math.cos(
+            theta) - 2 * dv * n * vy * math.sin(theta)) * (
+                                   dv ** 2 * fd ** 2 * n ** 2 - 2 * dv ** 2 * fd ** 2 * n ** 3 + dv ** 2 * fd ** 2 * n ** 4 - 4 * R ** 2 + 4 * x0 ** 2 + 4 * y0 ** 2 + 4 * dv * fd * (
+                                   -1 + n) * n * x0 * math.cos(
+                               theta) + 4 * dv * fd * (
+                                           -1 + n) * n * y0 * math.sin(
+                               theta)) + (-(
+                dv ** 2 * fd * n ** 2) + dv ** 2 * fd * n ** 3 + 2 * vx * x0 + 2 * vy * y0 + dv * n * (fd * (
+                -1 + n) * vx + 2 * x0) * math.cos(theta) + dv * n * (fd * (-1 + n) * vy + 2 * y0) * math.sin(
+            theta)) ** 2)
+        if delta < 0:
+            return None
+
+        frame1 = (-(
+                dv ** 2 * fd ** 2 * n ** 2) + dv ** 2 * fd ** 2 * n ** 3 + 2 * fd * vx * x0 + 2 * fd * vy * y0 - dv * fd ** 2 * n * vx * math.cos(
+            theta) + dv * fd ** 2 * n ** 2 * vx * math.cos(theta) + 2 * dv * fd * n * x0 * math.cos(
+            theta) - dv * fd ** 2 * n * vy * math.sin(theta) + dv * fd ** 2 * n ** 2 * vy * math.sin(
+            theta) + 2 * dv * fd * n * y0 * math.sin(theta) - math.sqrt(delta)) / (
+                         2. * fd ** 2 * (dv ** 2 * n ** 2 + vx ** 2 + vy ** 2 + 2 * dv * n * vx * math.cos(
+                     theta) + 2 * dv * n * vy * math.sin(theta)))
+        frame2 = (-(
+                dv ** 2 * fd ** 2 * n ** 2) + dv ** 2 * fd ** 2 * n ** 3 + 2 * fd * vx * x0 + 2 * fd * vy * y0 - dv * fd ** 2 * n * vx * math.cos(
+            theta) + dv * fd ** 2 * n ** 2 * vx * math.cos(theta) + 2 * dv * fd * n * x0 * math.cos(
+            theta) - dv * fd ** 2 * n * vy * math.sin(theta) + dv * fd ** 2 * n ** 2 * vy * math.sin(
+            theta) + 2 * dv * fd * n * y0 * math.sin(theta) + math.sqrt(delta)) / (
+                         2. * fd ** 2 * (dv ** 2 * n ** 2 + vx ** 2 + vy ** 2 + 2 * dv * n * vx * math.cos(
+                     theta) + 2 * dv * n * vy * math.sin(theta)))
+        frame = math.ceil(min(frame1, frame2))
+        # frame = math.ceil(frame1)
+        if frame <= 0:
+            return None
+        return math.ceil(frame)
+
+    # a追b划定喷射次数的上限, 返回可以喷射的所有次数的列表
+    def effect_eject_time(self, a, b):
+        ra = a.radius
+        rb = b.radius
+        if a.radius <= b.radius:
+            return 0
+        # 喷完还要大
+        n1 = math.floor(2 * math.log1p(rb / ra - 1) / math.log1p(-Consts['EJECT_MASS_RATIO']))
+        # 喷完要有收益
+        n2 = math.floor(math.log1p(- rb ** 2 / ra ** 2) / math.log1p(-Consts['EJECT_MASS_RATIO']))
+        n = min(n1, n2)
+        nlist = list(range(n + 1))
+        return nlist
+
+    # 给出一个合理一些的追击范围，不然0-2pi搜索太困难:速度方向和相切的线的夹角吧
+    def effect_attack_theta(self, a, b):
+        # vx = -a.veloc[0] + b.veloc[0]
+        # vy = -a.veloc[1] + b.veloc[1]
+        # theta_v = math.atan2(vx, vy)
+        # x0 = a.pos[0] - b.pos[0]
+        # y0 = a.pos[1] - b.pos[1]
+        # theta_x = math.atan2(x0, y0)
+        # R = self.sumR(a, b)
+        # dr = self.delta_r(a, b)
+        # alpha = math.acos(R / dr)
+        # # 计算两条切线的夹角(都是速度角)
+        # theta1 = theta_x - alpha - 0.5 * math.pi
+        # theta2 = theta_x + alpha + 0.5 * math.pi
+
+        return [2 * math.pi / 30 * n for n in range(29)]
+
+    def attack_method(self, a, b):
+        ways = []
+        for i in self.effect_eject_time(a, b):
+            for th in self.effect_attack_theta(a, b):
+                frame = self.attack_frame(a, b, th, i)
+                if frame is not None:
+                    profit = b.radius ** 2 - a.radius ** 2 * (1 - (1 - Consts['EJECT_MASS_RATIO']) ** i)
+                    income = self.income(frame, profit)
+                    ways.append((frame, i, 0.5 * math.pi - th, income))  # 喷射方向和这里的方向不一样，要改一下....
+        if not ways:
+            return None
+        best = sorted(ways, key=lambda way: way[3], reverse=True)[0]
+        return best
+
+    def income(self, frame, profit):
+        income = profit ** 4 / frame
+        return income
+
     # ------------------------------策略函数----------------------------------
 
-    # a到b的最短迎接方案（b向着a过来）
-    def best_method(self, a, b):
+    # a到b的最短进攻方案（b向着a过来）
+    def best_attack(self, a, b):
+        """
+        :type a: Cell
+        :type b: Cell
+        """
         # 先不考虑中间有球
         mirror = self.mirro_cell(b)
         ways = []
@@ -207,30 +331,21 @@ class Player():
         for i in mirror:
             if self.delta_r(a, i) - self.sumR(a, i) > self.search_radius:
                 continue
-            dvr = self.delta_vr(a, i)
-            if dvr >= 0:  # 将反向的排除暂时
+            # 使用匀加速策略来吃球！
+            method = self.attack_method(a, i)
+            if method is None:
                 continue
-            min_dis = self.min_distance(a, i)
-            R = self.sumR(a, i)
-            dr = self.delta_r(a, i)
-            dv = self.delta_v(a, i)
-            if min_dis <= R:  # 这个是可以自己碰撞到的，
-                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
-                dx = -a.pos[0] + i.pos[0]
-                dy = -a.pos[1] + i.pos[1]
-                theta = math.atan2(dx, dy) + math.pi  # 极轴是y轴,反向喷射球,哪个方向加速可以帮它最快到达？？目前假设径向
-                ways.append((time, theta))
 
-            else:  # 主动凑上去
-                time = min_dis / dv
-                dvx = -a.veloc[0] + i.veloc[0]
-                dvy = -a.veloc[1] + i.veloc[1]
-                theta = -math.atan2(dvy, dvx) + math.pi
-                ways.append((time, theta))
+            # 强制限定一下
+            if method[1] > 10:
+                continue
 
-        if not ways:
+            ways.append(method)
+        if ways == []:
             return None
-        best = sorted(ways, key=lambda way: way[0])[0]  # 最短时间的选择！
+
+        best = sorted(ways, key=lambda way: way[3], reverse=True)[0]  # 最短时间的选择！
+
         return best
 
     # a如何逃离直接背b吃掉的命运
@@ -245,16 +360,32 @@ class Player():
                 continue
             R = self.sumR(a, i)
             dr = self.delta_r(a, i)
-            if dr - R > self.danger_radius:
+            if dr - R > self.danger_radius:  # 将太远的排除掉，只要最有威胁的
                 continue
             min_dis = self.min_distance(a, i)
             dv = self.delta_v(a, i)
-            if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...）
+
+            # 计算喷射角度，都是垂直速度方向并且远离圆心
+            dx = -a.pos[0] + i.pos[0]
+            dy = -a.pos[1] + i.pos[1]
+            theta_x = math.atan2(dx, dy) + int(math.atan2(dx, dy) < 0) * 2 * math.pi
+            dvx = -a.veloc[0] + i.veloc[0]
+            dvy = -a.veloc[1] + i.veloc[1]
+            theta_v = math.atan2(dvx, dvy) + int(math.atan2(dvx, dvy) < 0) * 2 * math.pi
+            if theta_x - theta_v - 0.5 * math.pi + int(
+                    theta_x - theta_v - 0.5 * math.pi < 0) * 2 * math.pi <= 0.5 * math.pi:
+                theta = theta_v + math.pi * 0.5
+            else:
+                theta = theta_v - math.pi * 0.5
+
+            if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...)
                 time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
-                dx = -a.pos[0] + i.pos[0]
-                dy = -a.pos[1] + i.pos[1]
-                theta = math.atan2(dx, dy)  # 极轴是y轴,喷射球,指向最近距离方向
                 dangers.append((time, theta))  # 返回碰撞时间和逃离角度
+            if min_dis <= R + 10:  # 避免过于接近
+                print('close!')
+                time = min_dis / dv
+                dangers.append((time, theta))
+
         if not dangers:
             return None
         most_danger = sorted(dangers, key=lambda danger: danger[0])[0]
@@ -276,10 +407,13 @@ class Player():
             return None
 
     def strategy(self, allcells):
-        player = allcells[self.id]
+        player: Cell = allcells[self.id]
+        print(player.veloc)
         enemy = None
         bigger = []
         smaller = []
+        self.search_radius = self.search_r(player, len(allcells))
+        self.danger_radius = self.danger_r(player, len(allcells))
         # 标记出敌人，区分大的和小的
         for i in allcells:
             if i == player:
@@ -292,7 +426,7 @@ class Player():
                 smaller.append(i)
 
         # 逃跑：
-        if bigger == []:
+        if not bigger:
             pass
         else:
             dangers = []
@@ -300,23 +434,40 @@ class Player():
                 danger = self.best_escape(player, cell)
                 if danger is not None:
                     dangers.append(danger)
-            # 排除空的dangers
             if not dangers:
                 pass
             else:
+                self.tick = 0
+                self.eject_time = 0
                 return self.escape(dangers)
 
         # 吃球
+
+        # 还在之前的进程中
+        if self.tick > 0:
+            self.tick = self.tick - 1
+            if self.eject_time <= 0:
+                return None
+            else:
+                self.eject_time = self.eject_time - 1
+                return self.eject_direction
+
+        # 寻找有没有能吃的
         if len(smaller) == 0:
             return None
         methods = []
         for cell in smaller:
-            method = self.best_method(player, cell)
+            method = self.best_attack(player, cell)
             if method is not None:
                 methods.append(method)
         if not methods:
             return None
-        best_method = sorted(methods, key=lambda m: m[0])[0]
-
-        print('eat!')
-        return best_method[1]
+        best_method = sorted(methods, key=lambda m: m[3], reverse=True)[0]
+        # 一旦找到方案，这一帧就要开始喷射？（还是下一帧？）
+        self.eject_direction = best_method[2]  # 喷射方向
+        self.tick = best_method[0] - 1
+        self.eject_time = best_method[1] - 1
+        if self.eject_time >= 0:
+            return self.eject_direction
+        else:
+            return None
