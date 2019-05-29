@@ -131,6 +131,7 @@ class Cell():
 class Player():
     search_radius = 70  # (搜索半径）
     danger_radius = 70  # 危险判定半径
+    search_cellnumber = 5
 
     tick = 0
     eject_time = 0
@@ -162,11 +163,17 @@ class Player():
         else:
             return 70 * (2 * v) ** 2
 
-    def search_r(self, a, n):
-        if n > 12:
-            return 150
+    def search_r(self, a, allcells):
+        rlist = []
+        for i in allcells:
+            rlist.append(a.distance_from(i))
+        rlist.sort(reverse=True)
+        if len(rlist) < self.search_cellnumber + 1:
+            return rlist[-1]
+        if rlist[self.search_cellnumber] < 120:
+            return 120
         else:
-            return 400 / math.ceil(n / 5)
+            return rlist[self.search_cellnumber]
 
     # b相对a的径向速度（仅考虑未扩展的地图）
     def delta_vr(self, a, b):
@@ -391,6 +398,57 @@ class Player():
         most_danger = sorted(dangers, key=lambda danger: danger[0])[0]
         return most_danger
 
+    # 远离AI的逃跑策略
+    def escape_ai(self, a, enemy):
+        dangers = []
+        if a.distance_from(enemy) - self.sumR(a, enemy) > self.danger_radius:
+            return None
+        for i in self.mirro_cell(enemy):
+            dvr = self.delta_vr(a, i)
+            if dvr >= 0:  # 将反向的排除暂时
+                continue
+            R = self.sumR(a, i)
+            dr = self.delta_r(a, i)
+            if dr - R > self.danger_radius:
+                continue
+            min_dis = self.min_distance(a, i)
+            dv = self.delta_v(a, i)
+
+            dvx = -a.veloc[0] + i.veloc[0]
+            dvy = -a.veloc[1] + i.veloc[1]
+            dx = a.pos[0] - i.pos[0]
+            dy = a.pos[1] - i.pos[1]
+            theta_v = math.atan2(dvx, dvy)  # 敌人相对a的速度矢量
+            theta_x = math.atan2(dx, dy)  # 敌人指向a的位移矢量
+            dtheta = abs(theta_x - theta_v)
+
+            # 计算逃跑ai的角度，偏离位移矢量方向吧
+            # if dtheta >= math.pi:  # 变得<pi
+            #     dtheta = 2 * math.pi - dtheta
+            #     if dtheta >= math.radians(20):
+            #         theta = theta_x + math.pi
+            #     else:
+            #         theta = theta_x + math.pi + 2 * int(theta_x < theta_v) * math.radians(20) - math.radians(20)
+            # else:
+            #     if dtheta >= math.radians(20):
+            #         theta = theta_x + math.pi
+            #     else:
+            #         theta = theta_x + math.pi + 2 * int(theta_x > theta_v) * math.radians(20) - math.radians(20)
+
+            theta = theta_x + math.pi
+            if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...)
+                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
+                dangers.append((time, theta))  # 返回碰撞时间和逃离角度
+            if min_dis <= R + 10:  # 避免过于接近
+                print('ai close!')
+                time = min_dis / dv
+                dangers.append((time, theta))
+
+        if not dangers:
+            return None
+        most_danger = sorted(dangers, key=lambda danger: danger[0])[0]
+        return most_danger
+
     # 在给出的会造成危险的情况下，多个危险怎么跑？，限定到只有两个？
     def escape(self, dangers):
         if len(dangers) == 1:
@@ -412,7 +470,7 @@ class Player():
         enemy = None
         bigger = []
         smaller = []
-        self.search_radius = self.search_r(player, len(allcells))
+        self.search_radius = self.search_r(player, allcells)
         self.danger_radius = self.danger_r(player, len(allcells))
         # 标记出敌人，区分大的和小的
         for i in allcells:
@@ -431,7 +489,10 @@ class Player():
         else:
             dangers = []
             for cell in bigger:
-                danger = self.best_escape(player, cell)
+                if cell == enemy:
+                    danger = self.escape_ai(player, cell)
+                else:
+                    danger = self.best_escape(player, cell)
                 if danger is not None:
                     dangers.append(danger)
             if not dangers:
