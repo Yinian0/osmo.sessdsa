@@ -157,6 +157,15 @@ class Player():
                 mirror.append(temp)
         return mirror
 
+    # 镜像的还原
+    def mirro_back(self, cell):
+        x = cell.pos[0]
+        y = cell.pos[1]
+        x = x - Consts["WORLD_X"] * (x // Consts["WORLD_X"])
+        y = y - Consts["WORLD_Y"] * (y // Consts["WORLD_Y"])
+        cell.pos = (x, y)
+        return cell
+
     # 搜索半径随着数目减小要增大,(随速度增大也要增大?)
     def danger_r(self, a, n):
         v = (a.veloc[1] ** 2 + a.veloc[0] ** 2) ** 0.5
@@ -216,7 +225,7 @@ class Player():
 
     # 匀速运动到最小距离所花费的时间
     def min_time(self, a, b):
-        return self.min_distance(a, b) / self.delta_v(a, b)
+        return self.min_distance(a, b) / (self.delta_v(a, b) * Consts["FRAME_DELTA"])
 
     def abs_angle(self, t1, t2):
         dt = t1 - t2
@@ -230,7 +239,7 @@ class Player():
     def attack_frame(self, a, b, theta, eject_time):
         # 认为是对着一个固定方向连续喷射几个球，然后发生碰撞
         # 这里的theta是运动方向，和喷射方向相反，坐标是与x负方向夹角（为什么要取这个SB坐标！！！！）
-        R = self.sumR(a, b) * 0.9  # 增大保障！
+        R = self.sumR(a, b)  # 增大保障！
         x0 = a.pos[0] - b.pos[0]
         y0 = a.pos[1] - b.pos[1]
         vx = -a.veloc[0] + b.veloc[0]
@@ -254,23 +263,19 @@ class Player():
         if delta < 0:
             return None
 
-        frame1 = (-(
-                dv ** 2 * fd ** 2 * n ** 2) + dv ** 2 * fd ** 2 * n ** 3 + 2 * fd * vx * x0 + 2 * fd * vy * y0 - dv * fd ** 2 * n * vx * math.cos(
+        B = -(
+                    dv ** 2 * fd ** 2 * n ** 2) + dv ** 2 * fd ** 2 * n ** 3 + 2 * fd * vx * x0 + 2 * fd * vy * y0 - dv * fd ** 2 * n * vx * math.cos(
             theta) + dv * fd ** 2 * n ** 2 * vx * math.cos(theta) + 2 * dv * fd * n * x0 * math.cos(
             theta) - dv * fd ** 2 * n * vy * math.sin(theta) + dv * fd ** 2 * n ** 2 * vy * math.sin(
-            theta) + 2 * dv * fd * n * y0 * math.sin(theta) - math.sqrt(delta)) / (
-                         2. * fd ** 2 * (dv ** 2 * n ** 2 + vx ** 2 + vy ** 2 + 2 * dv * n * vx * math.cos(
-                     theta) + 2 * dv * n * vy * math.sin(theta)))
-        frame2 = (-(
-                dv ** 2 * fd ** 2 * n ** 2) + dv ** 2 * fd ** 2 * n ** 3 + 2 * fd * vx * x0 + 2 * fd * vy * y0 - dv * fd ** 2 * n * vx * math.cos(
-            theta) + dv * fd ** 2 * n ** 2 * vx * math.cos(theta) + 2 * dv * fd * n * x0 * math.cos(
-            theta) - dv * fd ** 2 * n * vy * math.sin(theta) + dv * fd ** 2 * n ** 2 * vy * math.sin(
-            theta) + 2 * dv * fd * n * y0 * math.sin(theta) + math.sqrt(delta)) / (
-                         2. * fd ** 2 * (dv ** 2 * n ** 2 + vx ** 2 + vy ** 2 + 2 * dv * n * vx * math.cos(
-                     theta) + 2 * dv * n * vy * math.sin(theta)))
+            theta) + 2 * dv * fd * n * y0 * math.sin(theta)
+        A = (
+                2. * fd ** 2 * (dv ** 2 * n ** 2 + vx ** 2 + vy ** 2 + 2 * dv * n * vx * math.cos(
+            theta) + 2 * dv * n * vy * math.sin(theta)))
+        frame1 = (B - math.sqrt(delta)) / A
+        frame2 = (B + math.sqrt(delta)) / A
         frame = math.ceil(min(frame1, frame2))
         # frame = math.ceil(frame1)
-        if frame <= 0 or frame > 60:
+        if frame <= 0 or frame > 80:
             return None
         return math.ceil(frame)
 
@@ -305,6 +310,7 @@ class Player():
 
         return [2 * math.pi / 30 * n for n in range(29)]
 
+    # a攻击b的喷射方案（不考虑镜像的）
     def attack_method(self, a, b):
         ways = []
         for i in self.effect_eject_time(a, b):
@@ -313,14 +319,16 @@ class Player():
                 if frame is not None:
                     profit = b.radius ** 2 - a.radius ** 2 * (1 - (1 - Consts['EJECT_MASS_RATIO']) ** i)
                     income = self.income(frame, profit)
-                    ways.append((frame, i, 0.5 * math.pi - th, income))  # 喷射方向和这里的方向不一样，要改一下....
+                    b = self.mirro_back(b)  # 还原镜像
+                    ways.append((frame, i, 0.5 * math.pi - th, income, b))  # 这里的b是可能超出边界的球
         if not ways:
             return None
         best = sorted(ways, key=lambda way: way[3], reverse=True)[0]
         return best
 
+    # 收益函数需要大大的调参！
     def income(self, frame, profit):
-        income = profit ** 4 / frame
+        income = profit / frame
         return income
 
     def sumM(self, cells):
@@ -331,6 +339,7 @@ class Player():
 
     # ------------------------------策略函数----------------------------------
 
+    # --------------进攻--------------------
     # a到b的最短进攻方案（b向着a过来）
     def best_attack(self, a, b):
         """
@@ -383,10 +392,6 @@ class Player():
             if method is None:
                 continue
 
-            # 强制限定一下
-            if method[1] > 15:
-                continue
-
             ways.append(method)
         if not ways:
             return None
@@ -394,6 +399,27 @@ class Player():
         best = sorted(ways, key=lambda way: way[3], reverse=True)[0]  # 最短时间的选择！
 
         return best
+
+    # 判断是否在限制时间内发生碰撞，返回限制时间内发生碰撞后的大小（忽略碰撞位移）
+    def will_collision(self, cell, allcells, frame_limit):
+        mass = cell.radius ** 2
+        for other in allcells[2:]:  # 排除自己和敌人
+            for i in self.mirro_cell(other):  # 考虑镜像
+                min_dis = self.min_distance(cell, i)
+                R = self.sumR(cell, i)
+                dr = self.delta_r(cell, i)
+                dv = self.delta_v(cell, i)
+                if min_dis <= R:
+                    if dv == 0:
+                        continue
+                    frame = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / (
+                            dv * Consts['FRAME_DELTA'])
+                    if frame <= frame_limit:
+                        mass += i.radius ** 2
+                        break
+        return mass
+
+    # ----------------逃跑--------------------
 
     # a如何逃离直接背b吃掉的命运
     def best_escape(self, a, b):
@@ -426,11 +452,12 @@ class Player():
                 theta = theta_v - math.pi * 0.5
 
             if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...)
-                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
+                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / (
+                        dv * Consts['FRAME_DELTA'])
                 dangers.append((time, theta))  # 返回碰撞时间和逃离角度
-            if min_dis <= R + 10:  # 避免过于接近
+            if min_dis <= R + 5:  # 避免过于接近
                 print('close!')
-                time = min_dis / dv
+                time = min_dis / (dv * Consts['FRAME_DELTA'])
                 dangers.append((time, theta))
 
         if not dangers:
@@ -477,11 +504,12 @@ class Player():
 
             theta = theta_x + math.pi
             if min_dis <= R:  # 这个是可以自己碰撞到的,有危险 (在加大一点？不要极限操作吧...)
-                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / dv
+                time = (math.sqrt(dr ** 2 - min_dis ** 2) - math.sqrt(R ** 2 - min_dis ** 2)) / (
+                        dv * Consts['FRAME_DELTA'])
                 dangers.append((time, theta))  # 返回碰撞时间和逃离角度
             if min_dis <= R + 10:  # 避免过于接近
                 print('ai close!')
-                time = min_dis / dv
+                time = min_dis / (dv * Consts['FRAME_DELTA'])
                 dangers.append((time, theta))
 
         if not dangers:
@@ -493,12 +521,13 @@ class Player():
     def escape(self, dangers):
         if len(dangers) == 1:
             print('danger!')
+            self.tick = dangers[0][0]
             return dangers[0][1]
         if len(dangers) >= 2:
             dangers = sorted(dangers, key=lambda danger: danger[0])[:2]
             a = dangers[0]
             b = dangers[1]
-            theta = (a[1] * b[0] + b[1] * a[0]) / (a[0] + b[0])  # 角度加权紧急程度
+            theta = (a[1] * b[0] + b[1] * a[0]) / (a[0] + b[0]) + math.pi  # 角度加权紧急程度
             print('danger!')
             return theta
         if len(dangers) == 0:
@@ -546,7 +575,7 @@ class Player():
             if not dangers:
                 pass
             else:
-                self.tick = 0
+                # self.tick = 0
                 self.eject_time = 0
                 return self.escape(dangers)
 
@@ -566,7 +595,7 @@ class Player():
             return None
         methods = []
         for cell in smaller:
-            if cell == enemy:  # 暂时先不管
+            if cell == enemy:  # 暂时先不管敌人
                 continue
             else:
                 method = self.best_attack(player, cell)
@@ -574,13 +603,20 @@ class Player():
                 methods.append(method)
         if not methods:
             return None
-        best_method = sorted(methods, key=lambda m: m[3], reverse=True)[0]
-        # 一旦找到方案，这一帧就要开始喷射？（还是下一帧？）
-        self.eject_direction = best_method[2]  # 喷射方向
-        self.tick = best_method[0] - 1
-        print(self.tick)
-        self.eject_time = best_method[1] - 1
-        if self.eject_time >= 0:
-            return self.eject_direction
-        else:
-            return None
+        methods = sorted(methods, key=lambda m: m[3], reverse=True)  # method: 吃球所花帧数，喷射次数，喷射角度，收益，目标cell
+
+        # 判断能不能吃（简单考虑碰撞
+        for m in methods:
+            player_mass = player.radius ** 2 * (1 - Consts['EJECT_MASS_RATIO']) ** m[1]
+            target_mass = self.will_collision(m[4], allcells, m[0])
+            if player_mass > target_mass:
+                # 一旦找到方案，这一帧就要开始喷射
+                self.eject_direction = m[2]  # 喷射方向
+                self.tick = m[0] - 1
+                print(self.tick)
+                self.eject_time = m[1] - 1
+                if self.eject_time >= 0:
+                    return self.eject_direction
+                else:
+                    return None
+        return None
